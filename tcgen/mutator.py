@@ -86,6 +86,14 @@ _BOOLEAN_OPS: list[tuple[type, type, str]] = [
     (ast.Or,  ast.And, "or → and"),
 ]
 
+# Augmented assignment: op inside ast.AugAssign (same pairs as arithmetic)
+_AUGASSIGN_OPS: list[tuple[type, type, str]] = [
+    (ast.Add,  ast.Sub,  "+= → -="),
+    (ast.Sub,  ast.Add,  "-= → +="),
+    (ast.Mult, ast.Div,  "*= → /="),
+    (ast.Div,  ast.Mult, "/= → *="),
+]
+
 
 # ---------------------------------------------------------------------------
 # Visitor helpers
@@ -168,6 +176,19 @@ def _collect_sites_from_node(
                     lineno=_lineno(node),
                     col_offset=_col(node),
                     description=f"boolean {label} (line {_lineno(node)})",
+                ))
+                counter[0] += 1
+                break
+
+    # --- Augmented assignment (AugAssign) -----------------------------------
+    elif isinstance(node, ast.AugAssign):
+        for orig_type, _repl_type, label in _AUGASSIGN_OPS:
+            if isinstance(node.op, orig_type):
+                sites.append(MutationSite(
+                    index=counter[0],
+                    lineno=_lineno(node),
+                    col_offset=_col(node),
+                    description=f"augassign {label} (line {_lineno(node)})",
                 ))
                 counter[0] += 1
                 break
@@ -313,6 +334,25 @@ class _MutationTransformer(ast.NodeTransformer):
         mutate_here = False
         replacement_op = None
         for orig_type, repl_type, _label in _BOOLEAN_OPS:
+            if isinstance(node.op, orig_type):
+                if self._should_mutate():
+                    mutate_here = True
+                    replacement_op = repl_type()
+                break
+
+        # 2. Descend into children regardless.
+        self.generic_visit(node)
+
+        if mutate_here:
+            node.op = replacement_op
+            self.applied = True
+        return node
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> Any:
+        # 1. Check this node's slot.
+        mutate_here = False
+        replacement_op = None
+        for orig_type, repl_type, _label in _AUGASSIGN_OPS:
             if isinstance(node.op, orig_type):
                 if self._should_mutate():
                     mutate_here = True

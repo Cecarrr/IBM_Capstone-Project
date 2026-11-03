@@ -48,7 +48,8 @@ class MutationSite:
     index: int           # stable 0-based position in the depth-first walk
     lineno: int          # line number in the original source (1-based)
     col_offset: int      # column in the original source
-    description: str     # human-readable "original → mutant" label
+    description: str     # human-readable "original -> mutant" label
+    _source_line: str    # verbatim text of the original source line (for the report)
 
 
 @dataclass(frozen=True)
@@ -64,34 +65,34 @@ class Mutant:
 
 # Arithmetic: each entry is (original_op_type, replacement_op_type, label)
 _ARITHMETIC_OPS: list[tuple[type, type, str]] = [
-    (ast.Add,  ast.Sub,  "+ → -"),
-    (ast.Sub,  ast.Add,  "- → +"),
-    (ast.Mult, ast.Div,  "* → /"),
-    (ast.Div,  ast.Mult, "/ → *"),
+    (ast.Add,  ast.Sub,  "+ -> -"),
+    (ast.Sub,  ast.Add,  "- -> +"),
+    (ast.Mult, ast.Div,  "* -> /"),
+    (ast.Div,  ast.Mult, "/ -> *"),
 ]
 
 # Comparison: cmpop nodes inside ast.Compare
 _COMPARISON_OPS: list[tuple[type, type, str]] = [
-    (ast.Lt,    ast.LtE,   "< → <="),
-    (ast.LtE,   ast.Lt,    "<= → <"),
-    (ast.Gt,    ast.GtE,   "> → >="),
-    (ast.GtE,   ast.Gt,    ">= → >"),
-    (ast.Eq,    ast.NotEq, "== → !="),
-    (ast.NotEq, ast.Eq,    "!= → =="),
+    (ast.Lt,    ast.LtE,   "< -> <="),
+    (ast.LtE,   ast.Lt,    "<= -> <"),
+    (ast.Gt,    ast.GtE,   "> -> >="),
+    (ast.GtE,   ast.Gt,    ">= -> >"),
+    (ast.Eq,    ast.NotEq, "== -> !="),
+    (ast.NotEq, ast.Eq,    "!= -> =="),
 ]
 
 # Boolean: boolop nodes inside ast.BoolOp
 _BOOLEAN_OPS: list[tuple[type, type, str]] = [
-    (ast.And, ast.Or,  "and → or"),
-    (ast.Or,  ast.And, "or → and"),
+    (ast.And, ast.Or,  "and -> or"),
+    (ast.Or,  ast.And, "or -> and"),
 ]
 
 # Augmented assignment: op inside ast.AugAssign (same pairs as arithmetic)
 _AUGASSIGN_OPS: list[tuple[type, type, str]] = [
-    (ast.Add,  ast.Sub,  "+= → -="),
-    (ast.Sub,  ast.Add,  "-= → +="),
-    (ast.Mult, ast.Div,  "*= → /="),
-    (ast.Div,  ast.Mult, "/= → *="),
+    (ast.Add,  ast.Sub,  "+= -> -="),
+    (ast.Sub,  ast.Add,  "-= -> +="),
+    (ast.Mult, ast.Div,  "*= -> /="),
+    (ast.Div,  ast.Mult, "/= -> *="),
 ]
 
 
@@ -129,10 +130,18 @@ def _col(node: ast.AST) -> int:
     return getattr(node, "col_offset", 0)
 
 
+def _src_line(lineno: int, source_lines: list[str]) -> str:
+    """Return the stripped text of line *lineno* (1-based) from *source_lines*."""
+    if 1 <= lineno <= len(source_lines):
+        return source_lines[lineno - 1].strip()
+    return ""
+
+
 def _collect_sites_from_node(
     node: ast.AST,
     counter: list[int],   # mutable single-element list used as a shared counter
     sites: list[MutationSite],
+    source_lines: list[str],
 ) -> None:
     """
     Examine *node* and append any MutationSite entries it generates.
@@ -142,11 +151,13 @@ def _collect_sites_from_node(
     if isinstance(node, ast.BinOp):
         for orig_type, _repl_type, label in _ARITHMETIC_OPS:
             if isinstance(node.op, orig_type):
+                ln = _lineno(node)
                 sites.append(MutationSite(
                     index=counter[0],
-                    lineno=_lineno(node),
+                    lineno=ln,
                     col_offset=_col(node),
-                    description=f"arithmetic {label} (line {_lineno(node)})",
+                    description=f"arithmetic {label}",
+                    _source_line=_src_line(ln, source_lines),
                 ))
                 counter[0] += 1
                 break  # only one arithmetic op per BinOp node
@@ -156,13 +167,13 @@ def _collect_sites_from_node(
         for i, op in enumerate(node.ops):
             for orig_type, _repl_type, label in _COMPARISON_OPS:
                 if isinstance(op, orig_type):
+                    ln = _lineno(node)
                     sites.append(MutationSite(
                         index=counter[0],
-                        lineno=_lineno(node),
+                        lineno=ln,
                         col_offset=_col(node),
-                        description=(
-                            f"comparison op[{i}] {label} (line {_lineno(node)})"
-                        ),
+                        description=f"comparison op[{i}] {label}",
+                        _source_line=_src_line(ln, source_lines),
                     ))
                     counter[0] += 1
                     break
@@ -171,11 +182,13 @@ def _collect_sites_from_node(
     elif isinstance(node, ast.BoolOp):
         for orig_type, _repl_type, label in _BOOLEAN_OPS:
             if isinstance(node.op, orig_type):
+                ln = _lineno(node)
                 sites.append(MutationSite(
                     index=counter[0],
-                    lineno=_lineno(node),
+                    lineno=ln,
                     col_offset=_col(node),
-                    description=f"boolean {label} (line {_lineno(node)})",
+                    description=f"boolean {label}",
+                    _source_line=_src_line(ln, source_lines),
                 ))
                 counter[0] += 1
                 break
@@ -184,11 +197,13 @@ def _collect_sites_from_node(
     elif isinstance(node, ast.AugAssign):
         for orig_type, _repl_type, label in _AUGASSIGN_OPS:
             if isinstance(node.op, orig_type):
+                ln = _lineno(node)
                 sites.append(MutationSite(
                     index=counter[0],
-                    lineno=_lineno(node),
+                    lineno=ln,
                     col_offset=_col(node),
-                    description=f"augassign {label} (line {_lineno(node)})",
+                    description=f"augassign {label}",
+                    _source_line=_src_line(ln, source_lines),
                 ))
                 counter[0] += 1
                 break
@@ -200,11 +215,13 @@ def _collect_sites_from_node(
         if isinstance(val, bool):
             return
         if isinstance(val, (int, float)):
+            ln = _lineno(node)
             sites.append(MutationSite(
                 index=counter[0],
-                lineno=_lineno(node),
+                lineno=ln,
                 col_offset=_col(node),
-                description=f"constant {val!r} → {val + 1!r} (line {_lineno(node)})",
+                description=f"constant {val!r} -> {val + 1!r}",
+                _source_line=_src_line(ln, source_lines),
             ))
             counter[0] += 1
 
@@ -215,11 +232,13 @@ def _collect_sites_from_node(
             return
         if isinstance(node.value, ast.Constant) and node.value.value is None:
             return
+        ln = _lineno(node)
         sites.append(MutationSite(
             index=counter[0],
-            lineno=_lineno(node),
+            lineno=ln,
             col_offset=_col(node),
-            description=f"return value → None (line {_lineno(node)})",
+            description="return value -> None",
+            _source_line=_src_line(ln, source_lines),
         ))
         counter[0] += 1
 
@@ -235,13 +254,16 @@ def enumerate_sites(source: str) -> list[MutationSite]:
     Returns
     -------
     list[MutationSite]
-        Sites indexed 0, 1, 2, … in depth-first, left-to-right AST order.
+        Sites indexed 0, 1, 2, ... in depth-first, left-to-right AST order.
+        Each site's ``_source_line`` field contains the stripped text of the
+        corresponding original source line.
     """
+    source_lines = source.splitlines()
     tree = ast.parse(source)
     counter: list[int] = [0]
     sites: list[MutationSite] = []
     for node in _walk_depth_first(tree):
-        _collect_sites_from_node(node, counter, sites)
+        _collect_sites_from_node(node, counter, sites, source_lines)
     return sites
 
 

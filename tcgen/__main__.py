@@ -48,7 +48,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     from tcgen.mutator import generate_mutants
     from tcgen.reporter import MutantResult, print_report
-    from tcgen.runner import Classification, run_in_sandbox
+    from tcgen.runner import run_in_sandbox
 
     module_path = Path(args.module).resolve()
     test_path = Path(args.test_file).resolve()
@@ -88,8 +88,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         test_path=test_path,
         timeout=timeout,
     )
-    if baseline.exit_code != 0 or baseline.collected == 0:
-        if baseline.exit_code == -1:
+    if baseline.timed_out or baseline.exit_code != 0 or baseline.collected == 0:
+        if baseline.timed_out:
             print("error: baseline timed out -- tests took too long on the original code.",
                   file=sys.stderr)
         elif baseline.collected == 0:
@@ -119,7 +119,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         test_path=test_path,
         timeout=timeout,
     )
-    if control.exit_code != 0:
+    if control.timed_out or control.exit_code != 0:
         print("error: tests FAIL against ast.unparse(source). "
               "The unparse round-trip changed observable behaviour. "
               "Check for f-strings, complex decorators, or encoding-sensitive code.",
@@ -133,9 +133,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     if not mutants:
         print("\nno mutation sites found -- nothing to mutate.")
-        # Still show baseline info without a score.
-        from tcgen.reporter import build_report
-        from tcgen.runner import RunResult
         print_report(baseline, control, [])
         return 0
 
@@ -152,11 +149,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
             test_path=test_path,
             timeout=timeout,
         )
-        # Override classification to TIMEOUT when the subprocess timed out.
-        if run.exit_code == -1:
-            run.classification = Classification.TIMEOUT
         print(run.classification.value)
-        results.append(MutantResult(mutant=mutant, classification=run.classification))
+        results.append(MutantResult(
+            mutant=mutant,
+            classification=run.classification,
+            exit_code=run.exit_code,
+        ))
 
     print()
     print_report(baseline, control, results)

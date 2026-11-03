@@ -50,15 +50,18 @@ class RunResult:
     failed: int
     collected: int
     raw_output: str
+    timed_out: bool = False
     classification: Classification = field(init=False)
 
     def __post_init__(self) -> None:
-        if self.exit_code == 0:
+        if self.timed_out:
+            self.classification = Classification.TIMEOUT
+        elif self.exit_code == 0:
             self.classification = Classification.SURVIVED
         elif self.exit_code == 1:
             self.classification = Classification.KILLED
         else:
-            self.classification = Classification.ERROR  # overridden by caller for timeout
+            self.classification = Classification.ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -190,15 +193,14 @@ def run_pytest(
             raw += exc.stdout if isinstance(exc.stdout, str) else exc.stdout.decode("utf-8", errors="replace")
         if exc.stderr:
             raw += exc.stderr if isinstance(exc.stderr, str) else exc.stderr.decode("utf-8", errors="replace")
-        result = RunResult(
+        return RunResult(
             exit_code=-1,
             passed=0,
             failed=0,
             collected=0,
             raw_output=raw,
+            timed_out=True,
         )
-        result.classification = Classification.TIMEOUT
-        return result
 
     raw = proc.stdout + proc.stderr
     passed, failed, collected = _parse_counts(raw)

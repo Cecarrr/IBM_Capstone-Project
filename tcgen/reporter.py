@@ -33,6 +33,7 @@ class MutantResult:
     """Outcome for a single mutant."""
     mutant: "Mutant"
     classification: "Classification"
+    exit_code: int = 0   # real pytest exit code (or -1 for timeout)
 
 
 def _safe(text: str) -> str:
@@ -48,14 +49,24 @@ _SEP  = "=" * 60
 _SEP2 = "-" * 60
 
 
-def _fmt_result(result: "RunResult") -> str:
-    cl = result.classification.value.upper()
+def _fmt_run(result: "RunResult", *, is_baseline: bool = False) -> str:
+    """Format a RunResult for the baseline/control section.
+
+    Uses PASSED / FAILED labels (not the mutant-specific SURVIVED/KILLED labels).
+    """
+    from tcgen.runner import Classification
+    if result.timed_out:
+        verdict = "TIMED OUT"
+    elif result.exit_code == 0:
+        verdict = "PASSED"
+    else:
+        verdict = "FAILED"
     return (
         f"  exit code  : {result.exit_code}\n"
         f"  collected  : {result.collected}\n"
         f"  passed     : {result.passed}\n"
         f"  failed     : {result.failed}\n"
-        f"  verdict    : {cl}"
+        f"  verdict    : {verdict}"
     )
 
 
@@ -91,10 +102,10 @@ def build_report(
     # Baseline
     # ------------------------------------------------------------------
     lines.append("\n[BASELINE] pytest on original source")
-    lines.append(_fmt_result(baseline))
+    lines.append(_fmt_run(baseline))
 
     lines.append("\n[CONTROL]  pytest on ast.unparse(original source)")
-    lines.append(_fmt_result(control))
+    lines.append(_fmt_run(control))
 
     # ------------------------------------------------------------------
     # Mutant counts
@@ -113,16 +124,17 @@ def build_report(
     lines.append(f"  error (excluded): {errors}")
 
     # ------------------------------------------------------------------
-    # Score
+    # Score  (timeouts count as killed)
     # ------------------------------------------------------------------
-    denominator = killed + survived
+    effective_killed = killed + timeouts
+    denominator = effective_killed + survived
     if total == 0:
         score_str = "N/A  (no mutation sites found)"
     elif denominator == 0:
-        score_str = "N/A  (all mutants errored — check import/collection errors)"
+        score_str = "N/A  (all mutants errored - check import/collection errors)"
     else:
-        pct = killed / denominator * 100
-        score_str = f"{killed}/{denominator}  ({pct:.1f}%)"
+        pct = effective_killed / denominator * 100
+        score_str = f"{effective_killed}/{denominator}  ({pct:.1f}%)"
 
     lines.append(f"\n  mutation score  : {score_str}")
 
@@ -136,7 +148,10 @@ def build_report(
         lines.append(_SEP2)
         for i, r in enumerate(survivors, 1):
             s = r.mutant.site
-            lines.append(f"  [{i}] line {s.lineno}  {_safe(s.description)}")
+            src_line = _safe(r.mutant.site._source_line)
+            lines.append(
+                f"  [{i}] line {s.lineno}: `{src_line}`  ({_safe(s.description)})"
+            )
     else:
         lines.append("\n  All mutants killed (or errored). No survivors.")
 
@@ -150,7 +165,7 @@ def build_report(
         lines.append(_SEP2)
         for r in error_mutants:
             s = r.mutant.site
-            lines.append(f"  line {s.lineno}  {_safe(s.description)}  (exit code {r.classification.value})")
+            lines.append(f"  line {s.lineno}  {_safe(s.description)}  (exit code {r.exit_code})")
 
     lines.append(f"\n{_SEP}")
 

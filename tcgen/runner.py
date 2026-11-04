@@ -11,8 +11,10 @@ Every pytest run is performed in an isolated temporary directory containing:
   - The test file
   - All sibling .py files from the module's original directory
 
-Environment flag PYTHONDONTWRITEBYTECODE=1 prevents .pyc files from
-accumulating in the temp directory between mutant runs.
+Environment flags set for every subprocess:
+  PYTHONDONTWRITEBYTECODE=1  -- no .pyc accumulation in the sandbox
+  PYTHONUTF8=1               -- UTF-8 mode for all I/O
+  PYTHONIOENCODING=utf-8     -- belt-and-suspenders for Windows cp1252 terminals
 
 Exit-code classification (per approved plan):
   0  -> SURVIVED
@@ -68,11 +70,6 @@ class RunResult:
 # Output parsing
 # ---------------------------------------------------------------------------
 
-# Matches lines like:  "5 passed, 1 failed, 1 warning in 0.12s"
-_SUMMARY_RE = re.compile(
-    r"(?:(?P<passed>\d+) passed)?.*?(?:(?P<failed>\d+) failed)?",
-    re.IGNORECASE,
-)
 # Matches "collected N item(s)"
 _COLLECTED_RE = re.compile(r"collected\s+(\d+)\s+item", re.IGNORECASE)
 # pytest exit code 5 means "no tests collected"
@@ -125,7 +122,7 @@ def _build_sandbox(
 
     Returns the TemporaryDirectory object; the caller is responsible for cleanup.
     """
-    tmpdir = tempfile.TemporaryDirectory(prefix="tcgen_")
+    tmpdir = tempfile.TemporaryDirectory(prefix="tcgen_", ignore_cleanup_errors=True)
     tmp = Path(tmpdir.name)
 
     # Write the module source (original or mutated).
@@ -175,6 +172,8 @@ def run_pytest(
     """
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     try:
         proc = subprocess.run(
@@ -182,6 +181,8 @@ def run_pytest(
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             env=env,
         )

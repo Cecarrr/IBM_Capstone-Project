@@ -158,89 +158,78 @@ domain knowledge to decode.
 
 ---
 
-## MODULE SOURCE: date_overlap.py
+## MODULE SOURCE: password_checker.py
 
 ```python
 """
-date_overlap.py
-===============
-Function for checking whether two date ranges overlap.
+password_checker.py
+===================
+Function for assessing the strength of a password string.
 """
-import datetime
 
 
-def ranges_overlap(
-    start1: datetime.date,
-    end1: datetime.date,
-    start2: datetime.date,
-    end2: datetime.date,
-) -> bool:
-    """Return True if two inclusive date ranges overlap, False otherwise.
+def check_strength(password: str) -> str:
+    """Return the strength of a password as "weak", "medium", or "strong".
 
-    Both ranges are INCLUSIVE of their start and end dates.  Two ranges
-    overlap if they share at least one calendar day in common, including
-    the case where one range ends on the exact same day that the other begins
-    (i.e., ranges that touch on exactly one day DO overlap).
-
-    Overlap condition (derived from the inclusive definition):
-        start1 <= end2  AND  start2 <= end1
+    Classification rules (applied in this order):
+      1. "weak"   -- the password is strictly shorter than 8 characters
+                     (i.e., length 0 through 7 inclusive gives "weak").
+      2. "strong" -- the password is at least 12 characters long AND satisfies
+                     ALL FOUR of the following character-class requirements:
+                       - at least one lowercase ASCII letter (a-z)
+                       - at least one uppercase ASCII letter (A-Z)
+                       - at least one ASCII digit (0-9)
+                       - at least one symbol, defined as any printable non-alphanumeric
+                         ASCII character (i.e., any character in string.punctuation,
+                         for example: ! @ # $ % ^ & * ( ) - _ = + etc.)
+                     A password of exactly 12 characters that meets all four requirements
+                     is "strong".  Length alone (>= 12) is not sufficient.
+      3. "medium" -- every password that is not "weak" and not "strong".
+                     This includes passwords of length 8 to 11, and passwords of
+                     length >= 12 that are missing one or more character classes.
 
     Parameters
     ----------
-    start1 : datetime.date
-        The first day of the first range (inclusive).
-    end1 : datetime.date
-        The last day of the first range (inclusive).  Must be >= start1.
-    start2 : datetime.date
-        The first day of the second range (inclusive).
-    end2 : datetime.date
-        The last day of the second range (inclusive).  Must be >= start2.
+    password : str
+        The password string to evaluate.
 
     Returns
     -------
-    bool
-        True if the two ranges share at least one calendar day.
-        False if the ranges are completely disjoint (no shared day).
+    str
+        One of "weak", "medium", or "strong".
 
     Raises
     ------
     TypeError
-        If any argument is not a ``datetime.date`` instance.
-        Note: ``datetime.datetime`` is a subclass of ``datetime.date`` and is
-        accepted without error.
-    ValueError
-        If ``end1`` is strictly before ``start1``, or if ``end2`` is strictly
-        before ``start2``.
+        If ``password`` is not a str.
 
     Examples
     --------
-    >>> from datetime import date
-    >>> ranges_overlap(date(2024, 1, 1), date(2024, 1, 10),
-    ...                date(2024, 1, 5), date(2024, 1, 15))
-    True
-    >>> ranges_overlap(date(2024, 1, 1), date(2024, 1, 5),
-    ...                date(2024, 1, 5), date(2024, 1, 10))
-    True
-    >>> ranges_overlap(date(2024, 1, 1), date(2024, 1, 4),
-    ...                date(2024, 1, 5), date(2024, 1, 10))
-    False
-    >>> ranges_overlap(date(2024, 1, 5), date(2024, 1, 10),
-    ...                date(2024, 1, 1), date(2024, 1, 5))
-    True
+    >>> check_strength("abc")
+    'weak'
+    >>> check_strength("abcdefgh")
+    'medium'
+    >>> check_strength("Abcdefgh1!")
+    'medium'
+    >>> check_strength("Abcdefgh12!")
+    'strong'
+    >>> check_strength("")
+    'weak'
     """
-    for arg in (start1, end1, start2, end2):
-        if not isinstance(arg, datetime.date):
-            raise TypeError(
-                f"all arguments must be datetime.date instances, got {type(arg).__name__}"
-            )
-    if end1 < start1:
-        raise ValueError(
-            f"end1 ({end1}) must not be before start1 ({start1})"
-        )
-    if end2 < start2:
-        raise ValueError(
-            f"end2 ({end2}) must not be before start2 ({start2})"
-        )
-    return start1 <= end2 and start2 <= end1
+    if not isinstance(password, str):
+        raise TypeError(f"password must be a str, got {type(password).__name__}")
+
+    if len(password) < 8:
+        return "weak"
+
+    if len(password) >= 12:
+        has_lower  = any(c.islower() for c in password)
+        has_upper  = any(c.isupper() for c in password)
+        has_digit  = any(c.isdigit() for c in password)
+        has_symbol = any(not c.isalnum() and c.isprintable() for c in password)
+        if has_lower and has_upper and has_digit and has_symbol:
+            return "strong"
+
+    return "medium"
 
 ```

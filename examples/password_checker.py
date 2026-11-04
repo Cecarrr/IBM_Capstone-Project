@@ -13,12 +13,15 @@ def check_strength(password: str) -> str:
                      (i.e., length 0 through 7 inclusive gives "weak").
       2. "strong" -- the password is at least 12 characters long AND satisfies
                      ALL FOUR of the following character-class requirements:
-                       - at least one lowercase ASCII letter (a-z)
-                       - at least one uppercase ASCII letter (A-Z)
-                       - at least one ASCII digit (0-9)
-                       - at least one symbol, defined as any printable non-alphanumeric
-                         ASCII character (i.e., any character in string.punctuation,
-                         for example: ! @ # $ % ^ & * ( ) - _ = + etc.)
+                       - at least one lowercase ASCII letter, defined as a character in
+                         string.ascii_lowercase (a-z only; accented letters do NOT count)
+                       - at least one uppercase ASCII letter, defined as a character in
+                         string.ascii_uppercase (A-Z only)
+                       - at least one ASCII digit, defined as a character in
+                         string.digits (0-9 only)
+                       - at least one symbol, defined as a character in
+                         string.punctuation (printable non-alphanumeric ASCII;
+                         a space does NOT count as a symbol)
                      A password of exactly 12 characters that meets all four requirements
                      is "strong".  Length alone (>= 12) is not sufficient.
       3. "medium" -- every password that is not "weak" and not "strong".
@@ -48,7 +51,7 @@ def check_strength(password: str) -> str:
     'medium'
     >>> check_strength("Abcdefgh1!")
     'medium'
-    >>> check_strength("Abcdefgh12!")
+    >>> check_strength("Abcdefgh123!")
     'strong'
     >>> check_strength("")
     'weak'
@@ -60,10 +63,11 @@ def check_strength(password: str) -> str:
         return "weak"
 
     if len(password) >= 12:
-        has_lower  = any(c.islower() for c in password)
-        has_upper  = any(c.isupper() for c in password)
-        has_digit  = any(c.isdigit() for c in password)
-        has_symbol = any(not c.isalnum() and c.isprintable() for c in password)
+        import string as _string
+        has_lower  = any(c in _string.ascii_lowercase for c in password)
+        has_upper  = any(c in _string.ascii_uppercase for c in password)
+        has_digit  = any(c in _string.digits for c in password)
+        has_symbol = any(c in _string.punctuation for c in password)
         if has_lower and has_upper and has_digit and has_symbol:
             return "strong"
 

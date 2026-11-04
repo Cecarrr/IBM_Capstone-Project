@@ -6,10 +6,11 @@ Formats and prints the mutation testing report.
 The report covers:
   1. Baseline run results (pass/fail on the original code).
   2. Mutant statistics: killed, survived, timeout, error counts.
-  3. Mutation score = killed / (killed + survived).
-     - "N/A" when killed + survived == 0 (all errors).
-  4. Per-surviving-mutant details: original line number + change description.
-  5. Per-error-mutant details (excluded from score).
+  3. Mutation score = (killed + timeout) / (killed + timeout + survived).
+     - Timeouts count as killed.
+     - "N/A" when total == 0 (no sites) or denominator == 0 (all errors).
+  4. Per-surviving-mutant details: original line number + source text + change.
+  5. Per-error-mutant details with numeric exit code (excluded from score).
 
 The public function also returns the report as a plain string so that
 tests can assert on it without capturing stdout.
@@ -49,12 +50,11 @@ _SEP  = "=" * 60
 _SEP2 = "-" * 60
 
 
-def _fmt_run(result: "RunResult", *, is_baseline: bool = False) -> str:
+def _fmt_run(result: "RunResult") -> str:
     """Format a RunResult for the baseline/control section.
 
     Uses PASSED / FAILED labels (not the mutant-specific SURVIVED/KILLED labels).
     """
-    from tcgen.runner import Classification
     if result.timed_out:
         verdict = "TIMED OUT"
     elif result.exit_code == 0:

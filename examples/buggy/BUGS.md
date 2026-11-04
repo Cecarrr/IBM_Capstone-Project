@@ -31,6 +31,9 @@ exactly 8 characters is classified as "weak" instead of "medium".
 **Expected failing test:** any test that asserts `check_strength("abcdefgh") == "medium"`
 will FAIL on the buggy version.
 
+Note: the docstring example uses `"Abcdefgh123!"` (12 chars, all four classes) -> `"strong"`.
+The symbol check uses `string.punctuation`; a space does NOT count as a symbol.
+
 ---
 
 ## date_overlap.py

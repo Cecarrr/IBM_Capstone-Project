@@ -5,14 +5,14 @@ Assembles the LLM prompt from three Markdown layer files and a Python module.
 
 Output file layout
 ------------------
-  [Layer 1 — Role & Context]
+  [Layer 1 - Role & Context]
   ---
-  [Layer 2 — Testing Task]
+  [Layer 2 - Testing Task]
   ---
-  [Layer 3 — Output Format]
+  [Layer 3 - Output Format]
   ---
   [MODULE SOURCE: <filename>]
-  ```python
+  ```python          (fence length >= longest backtick run in source + 1)
   <source>
   ```
 """
@@ -76,10 +76,19 @@ def build_prompt(module_path: Path, out_path: Path) -> None:
     for layer_name in _LAYER_FILES:
         sections.append(_load_layer(layer_name))
 
+    # Choose a code fence longer than any run of backticks inside the source,
+    # so that source files containing ``` cannot break the Markdown fence.
+    import re as _re
+    max_backticks = max(
+        (len(m.group()) for m in _re.finditer(r"`+", source)),
+        default=2,
+    )
+    fence = "`" * max(3, max_backticks + 1)
+
     # Append the module source as a fenced code block.
     sections.append(
         f"## MODULE SOURCE: {module_path.name}\n\n"
-        f"```python\n{source}\n```"
+        f"{fence}python\n{source}\n{fence}"
     )
 
     separator = "\n\n---\n\n"

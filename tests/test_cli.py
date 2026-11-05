@@ -176,8 +176,8 @@ def test_check_aborts_on_zero_tests(tmp_path: Path):
     test = _write(tmp_path / "test_empty.py", "# no tests here\n")
     rc, out = _run(TCGEN, "check", str(mod), str(test))
     assert rc == 1
-    lower = out.lower()
-    assert "0" in out or "collect" in lower or "empty" in lower
+    assert "pytest collected 0 tests" in out, \
+        f"Expected exact message 'pytest collected 0 tests' in output:\n{out}"
 
 
 # ---------------------------------------------------------------------------
@@ -193,3 +193,37 @@ def test_build_prompt_from_different_cwd(tmp_path: Path):
     assert rc == 0
     # prompt_out.md should be in `other` (CWD)
     assert (other / "prompt_out.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: check on grade_calculator with strong and weak suites
+# ---------------------------------------------------------------------------
+
+def test_check_grade_calculator_strong_suite():
+    """Full end-to-end: strong suite scores 100% on the good module."""
+    rc, out = _run(
+        TCGEN, "check",
+        str(ROOT / "examples" / "grade_calculator.py"),
+        str(ROOT / "examples" / "sample_tests" / "test_grade_calculator_strong.py"),
+    )
+    assert rc == 0, f"Expected exit 0, got {rc}.\nOutput:\n{out}"
+    assert "22/22" in out, f"Expected '22/22' in output:\n{out}"
+    assert "100.0%" in out, f"Expected '100.0%' in output:\n{out}"
+
+
+def test_check_grade_calculator_weak_suite():
+    """Full end-to-end: weak suite has surviving mutants and scores below 50%."""
+    rc, out = _run(
+        TCGEN, "check",
+        str(ROOT / "examples" / "grade_calculator.py"),
+        str(ROOT / "examples" / "sample_tests" / "test_grade_calculator_weak.py"),
+    )
+    assert rc == 0, f"Expected exit 0, got {rc}.\nOutput:\n{out}"
+    assert "survived" in out.lower(), \
+        f"Expected surviving mutants listed in output:\n{out}"
+    # Score must be below 50%: extract the percentage from "N/M  (X.X%)"
+    import re
+    m = re.search(r"\((\d+\.\d+)%\)", out)
+    assert m is not None, f"Could not find score percentage in output:\n{out}"
+    score = float(m.group(1))
+    assert score < 50.0, f"Weak suite score {score:.1f}% is not below 50%"

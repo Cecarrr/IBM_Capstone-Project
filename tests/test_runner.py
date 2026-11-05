@@ -88,11 +88,22 @@ def test_classification_exit_2_error():
     assert r.classification == Classification.ERROR
 
 
-def test_classification_exit_5_collected_zero():
-    # pytest exits 5 when no tests are collected; run_pytest resets collected to 0
-    r = RunResult(exit_code=5, passed=0, failed=0, collected=0, raw_output="")
-    assert r.classification == Classification.ERROR
-    assert r.collected == 0
+def test_real_empty_test_file_exit_5(tmp_path: Path):
+    """A real run of an empty test file: pytest exits 5, collected==0, ERROR."""
+    mod  = _write(tmp_path / "mod.py", "def f(): return 1\n")
+    test = _write(tmp_path / "test_empty.py", "# no tests here\n")
+    result = run_in_sandbox(
+        module_source=mod.read_text(encoding="utf-8"),
+        module_filename="mod.py",
+        module_dir=tmp_path,
+        test_path=test,
+        timeout=10.0,
+    )
+    assert result.exit_code == 5, \
+        f"Expected exit code 5 for empty test file, got {result.exit_code}"
+    assert result.collected == 0, \
+        f"Expected collected==0 for empty test file, got {result.collected}"
+    assert result.classification == Classification.ERROR
 
 
 def test_classification_timed_out():
@@ -267,3 +278,45 @@ def test_non_ascii_module(tmp_path: Path):
         timeout=10.0,
     )
     assert result.classification == Classification.SURVIVED
+
+
+# ---------------------------------------------------------------------------
+# Real run: 2 passing tests + 1 failing test (-x stops at first failure)
+# ---------------------------------------------------------------------------
+
+def test_real_two_pass_one_fail(tmp_path: Path):
+    """A real run with 2 passing tests and 1 failing test.
+
+    With -x, pytest stops at the first failure, so:
+      exit_code == 1, failed >= 1, passed is parsed from the summary line.
+    """
+    mod = _write(tmp_path / "calc.py", """\
+        def add(a, b):
+            return a + b
+    """)
+    # Two tests pass, one fails (wrong expected value).
+    # -x stops at the first failure, so we get 1 failed + however many passed before it.
+    # Order: pass, pass, fail -> with -x we see 2 passed, 1 failed.
+    test = _write(tmp_path / "test_calc.py", """\
+        from calc import add
+        def test_one():
+            assert add(1, 2) == 3
+        def test_two():
+            assert add(0, 0) == 0
+        def test_three_fails():
+            assert add(1, 1) == 99   # intentionally wrong
+    """)
+    result = run_in_sandbox(
+        module_source=mod.read_text(encoding="utf-8"),
+        module_filename="calc.py",
+        module_dir=tmp_path,
+        test_path=test,
+        timeout=10.0,
+    )
+    assert result.exit_code == 1, \
+        f"Expected exit code 1, got {result.exit_code}\nOutput:\n{result.raw_output}"
+    assert result.failed >= 1, \
+        f"Expected at least 1 failed test, got {result.failed}\nOutput:\n{result.raw_output}"
+    assert result.passed == 2, \
+        f"Expected 2 passed tests, got {result.passed}\nOutput:\n{result.raw_output}"
+    assert result.classification == Classification.KILLED
